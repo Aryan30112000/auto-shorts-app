@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import asyncio
+from PIL import Image
 import google.generativeai as genai
 import edge_tts
 from moviepy.editor import ImageClip, AudioFileClip, vfx
@@ -13,7 +14,7 @@ st.title("📱 Auto Shorts Generator")
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    st.error("API Key सेटिंग्स में नहीं मिली!")
+    st.error("API Key सेटिंग्स में नहीं मिली! कृपया Streamlit Secrets चेक करें।")
     st.stop()
 
 uploaded_file = st.file_uploader("अपना पोस्टर अपलोड करें", type=["jpg", "jpeg", "png"])
@@ -29,15 +30,16 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
             with open(input_img_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
 
-            # 1. Gemini से हिंदी स्क्रिप्ट
+            # 1. Gemini से हिंदी स्क्रिप्ट (सीधे PIL Image पास करके)
             model = genai.GenerativeModel("gemini-1.5-flash")
-            img_file = genai.upload_file(input_img_path)
+            pil_image = Image.open(input_img_path)
+            
             prompt = (
                 "इस पोस्टर को पढ़ो और केवल 15 सेकंड की आकर्षक, बोलने वाली हिंदी स्क्रिप्ट लिखो। "
                 "शुरुआत में सवाल हो और अंत में 'YES या NO कमेंट करें' कहें। "
-                "सिर्फ बोलने वाला टेक्स्ट दो, कोई निर्देश नहीं।"
+                "सिर्फ बोलने वाला टेक्स्ट दो, कोई निर्देश या इमोजी नहीं।"
             )
-            res = model.generate_content([img_file, prompt])
+            res = model.generate_content([pil_image, prompt])
             script = res.text.strip()
             st.info(f"**जनरेटेड स्क्रिप्ट:** {script}")
 
