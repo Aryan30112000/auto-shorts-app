@@ -20,41 +20,51 @@ else:
     st.error("API Key सेटिंग्स में नहीं मिली! कृपया Streamlit Secrets चेक करें।")
     st.stop()
 
-# Helper: Logo Blur (Center Watermark Cleanup)
+# Helper: Logo Blur (Accurate Center Cleanup)
 def remove_center_watermark(image_path, output_path):
     img = cv2.imread(image_path)
     h, w, _ = img.shape
     
-    # बीच का वॉटरमार्क (GK लोगो) ब्लर करना
-    ymin, ymax = int(h * 0.42), int(h * 0.58)
-    xmin, xmax = int(w * 0.42), int(w * 0.58)
+    # सेंटर वॉटरमार्क एरिया को थोड़ा बड़ा और स्मूथ ब्लर
+    ymin, ymax = int(h * 0.40), int(h * 0.60)
+    xmin, xmax = int(w * 0.40), int(w * 0.60)
     
     sub_img = img[ymin:ymax, xmin:xmax]
-    blurred = cv2.GaussianBlur(sub_img, (35, 35), 30)
+    blurred = cv2.GaussianBlur(sub_img, (51, 51), 40)
     img[ymin:ymax, xmin:xmax] = blurred
     
     cv2.imwrite(output_path, img)
     return output_path
 
-# Helper: PIL-based Subtitle Image Generator (No ImageMagick Required)
-def create_subtitle_image(text, output_path, width=1080, height=250):
-    # ट्रांसपेरेंट इमेज कैनवास
+# Helper: Hindi Subtitle Image (With Devanagari Font Support)
+def create_subtitle_image(text, output_path, width=1080, height=220):
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
-    # फॉन्ट लोड करना (डिफ़ॉल्ट सिस्टम फॉन्ट)
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
-    except Exception:
+    # हिंदी सपोर्टेड फॉन्ट्स
+    font_paths = [
+        "/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    ]
+    
+    font = None
+    for fp in font_paths:
+        if os.path.exists(fp):
+            try:
+                font = ImageFont.truetype(fp, 44)
+                break
+            except Exception:
+                continue
+                
+    if font is None:
         font = ImageFont.load_default()
 
-    # टेक्स्ट रैप और सेंटर अलाइनमेंट
     words = text.split()
-    lines = []
-    curr = []
+    lines, curr = [], []
     for w in words:
         curr.append(w)
-        if len(" ".join(curr)) > 28:
+        if len(" ".join(curr)) > 26:
             lines.append(" ".join(curr[:-1]))
             curr = [w]
     if curr:
@@ -62,7 +72,6 @@ def create_subtitle_image(text, output_path, width=1080, height=250):
 
     full_text = "\n".join(lines)
 
-    # ब्लैक बैकग्राउंड बॉक्स + येलो टेक्स्ट + ब्लैक स्ट्रोक
     bbox = draw.multiline_textbbox((0, 0), full_text, font=font, align="center")
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
@@ -70,10 +79,9 @@ def create_subtitle_image(text, output_path, width=1080, height=250):
     x = (width - text_w) // 2
     y = (height - text_h) // 2
 
-    # बैकग्राउंड डार्क स्ट्रिप
-    draw.rounded_rectangle([x - 20, y - 10, x + text_w + 20, y + text_h + 10], radius=15, fill=(0, 0, 0, 180))
-    # टेक्स्ट ड्रा करें
-    draw.multiline_text((x, y), full_text, font=font, fill="#FFEB3B", align="center")
+    # बैकग्राउंड डार्क स्ट्रिप + येलो टेक्स्ट
+    draw.rounded_rectangle([x - 20, y - 10, x + text_w + 20, y + text_h + 10], radius=15, fill=(0, 0, 0, 200))
+    draw.multiline_text((x, y), full_text, font=font, fill="#FFE600", align="center")
     
     img.save(output_path, "PNG")
     return output_path
@@ -81,7 +89,7 @@ def create_subtitle_image(text, output_path, width=1080, height=250):
 uploaded_file = st.file_uploader("अपना पोस्टर अपलोड करें", type=["jpg", "jpeg", "png"])
 
 if uploaded_file and st.button("🚀 Video Generate Karein"):
-    with st.spinner("AI वीडियो प्रोसेस कर रहा है (सबटाइटल्स + लोगो क्लीन + मोशन)..."):
+    with st.spinner("AI वीडियो प्रोसेस कर रहा है..."):
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 raw_img_path = os.path.join(tmpdir, "raw.jpg")
@@ -92,10 +100,10 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                 with open(raw_img_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
 
-                # 1. Clean Watermark
+                # 1. Clean Logo
                 remove_center_watermark(raw_img_path, clean_img_path)
 
-                # 2. Gemini Script Generation
+                # 2. Gemini Script
                 pil_image = Image.open(clean_img_path)
                 prompt = (
                     "इस पोस्टर को पढ़ो और केवल 15 सेकंड की आकर्षक हिंदी स्क्रिप्ट लिखो। "
@@ -113,18 +121,18 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                 script = res.text.strip()
                 st.info(f"**जनरेटेड स्क्रिप्ट:**\n\n{script}")
 
-                # 3. Voiceover (Edge-TTS)
+                # 3. Voiceover
                 async def generate_audio():
                     comm = edge_tts.Communicate(script, voice="hi-IN-MadhurNeural")
                     await comm.save(audio_path)
 
                 asyncio.run(generate_audio())
 
-                # 4. Video & Motion Assembly
+                # 4. Video Assembly
                 audio = AudioFileClip(audio_path)
                 dur = audio.duration
 
-                # Background Blur
+                # Blurred Background
                 orig = Image.open(clean_img_path)
                 bg_img = orig.resize((1080, 1920)).filter(ImageFilter.GaussianBlur(25))
                 bg_p = os.path.join(tmpdir, "bg.jpg")
@@ -137,9 +145,9 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                 fg_clip = fg_clip.set_position("center")
                 fg_clip = fg_clip.resize(lambda t: 1 + 0.03 * (t / dur))
 
-                # 5. Captions Overlay (PIL Images)
+                # 5. Hindi Subtitles
                 words = script.split()
-                chunk_size = max(5, len(words) // 4)
+                chunk_size = max(4, len(words) // 4)
                 chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
                 
                 subtitle_clips = []
