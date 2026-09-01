@@ -31,7 +31,7 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                 f.write(uploaded_file.getbuffer())
 
             # 1. Gemini से हिंदी स्क्रिप्ट (सीधे PIL Image पास करके)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("models/gemini-1.5-flash")
             pil_image = Image.open(input_img_path)
             
             prompt = (
