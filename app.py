@@ -58,17 +58,40 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                 asyncio.run(generate_audio())
 
                 # 3. Video Editing (MoviePy)
-                audio = AudioFileClip(audio_path)
-                clip = ImageClip(input_img_path).set_duration(audio.duration)
-                
-                # 9:16 Shorts Format & Zoom Motion
-                clip = clip.resize(height=1920)
-                clip = clip.crop(x_center=clip.w/2, y_center=clip.h/2, width=1080, height=1920)
-                clip = clip.fx(vfx.resize, lambda t: 1 + 0.03 * (t / audio.duration))
-                clip = clip.set_audio(audio)
-                
-                clip.write_videofile(output_vid_path, fps=24, codec="libx264", audio_codec="aac")
+                import numpy as np
+from PIL import ImageFilter
 
+# 3. Video Editing (Clean & Glitch-Free 9:16 Format)
+audio = AudioFileClip(audio_path)
+duration = audio.duration
+
+# ओरिजिनल इमेज लोड करें
+orig_img = Image.open(input_img_path)
+
+# (A) बैकग्राउंड: फुल 1080x1920 पर ब्लर इमेज
+bg_img = orig_img.resize((1080, 1920)).filter(ImageFilter.GaussianBlur(15))
+bg_path = os.path.join(tmpdir, "bg.jpg")
+bg_img.save(bg_path)
+bg_clip = ImageClip(bg_path).set_duration(duration)
+
+# (B) फोरग्राउंड: ओरिजिनल पोस्टर बिना कटे बीच में फिट
+fg_clip = ImageClip(input_img_path).set_duration(duration)
+fg_clip = fg_clip.resize(width=1000)  # स्क्रीन पर सुंदर फिट
+fg_clip = fg_clip.set_position("center")
+
+# दोनों को कंबाइन करें
+from moviepy.editor import CompositeVideoClip
+final_clip = CompositeVideoClip([bg_clip, fg_clip], size=(1080, 1920))
+final_clip = final_clip.set_audio(audio)
+
+final_clip.write_videofile(
+    output_vid_path, 
+    fps=24, 
+    codec="libx264", 
+    audio_codec="aac",
+    preset="ultrafast",
+    ffmpeg_params=["-pix_fmt", "yuv420p"]
+)
                 # 4. Display & Download
                 st.success("🎉 वीडियो तैयार है!")
                 st.video(output_vid_path)
