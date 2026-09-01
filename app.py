@@ -20,25 +20,28 @@ else:
     st.error("API Key सेटिंग्स में नहीं मिली! कृपया Streamlit Secrets चेक करें।")
     st.stop()
 
-# Helper: Logo Blur (Targeting Center 'GK' Badge)
-def remove_center_watermark(image_path, output_path):
+# Helper: Logo Blur & Crop Bottom Clutter
+def process_poster(image_path, output_path):
     img = cv2.imread(image_path)
     h, w, _ = img.shape
     
-    # सेंटर 'GK' लोगो का सटीक एरिया
-    ymin, ymax = int(h * 0.44), int(h * 0.54)
-    xmin, xmax = int(w * 0.44), int(w * 0.56)
+    # A. पोस्टर के नीचे लिखे बड़े इंग्लिश टेक्स्ट को काटें (Clean Crop)
+    img_cropped = img[0:int(h * 0.76), 0:w]
+    ch, cw, _ = img_cropped.shape
     
-    sub_img = img[ymin:ymax, xmin:xmax]
-    blurred = cv2.GaussianBlur(sub_img, (65, 65), 50)
-    img[ymin:ymax, xmin:xmax] = blurred
+    # B. बीच वाले 'GK' लोगो को टारगेटेड ब्लर करना
+    ymin, ymax = int(ch * 0.46), int(ch * 0.58)
+    xmin, xmax = int(cw * 0.45), int(cw * 0.55)
     
-    cv2.imwrite(output_path, img)
+    sub_img = img_cropped[ymin:ymax, xmin:xmax]
+    blurred = cv2.GaussianBlur(sub_img, (75, 75), 50)
+    img_cropped[ymin:ymax, xmin:xmax] = blurred
+    
+    cv2.imwrite(output_path, img_cropped)
     return output_path
 
-# Helper: Clean Caption Bar (Bottom English Text Covering Box)
-def create_subtitle_image(text, output_path, width=1080, height=360):
-    # सॉलिड डार्क बैकग्राउंड बॉक्स जो नीचे वाले ओरिजिनल टेक्स्ट को पूरी तरह छुपा देगा
+# Helper: Balanced Subtitle Box
+def create_subtitle_image(text, output_path, width=1000, height=260):
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
@@ -62,7 +65,7 @@ def create_subtitle_image(text, output_path, width=1080, height=360):
     lines, curr = [], []
     for w in words:
         curr.append(w)
-        if len(" ".join(curr)) > 24:
+        if len(" ".join(curr)) > 22:
             lines.append(" ".join(curr[:-1]))
             curr = [w]
     if curr:
@@ -70,8 +73,8 @@ def create_subtitle_image(text, output_path, width=1080, height=360):
 
     full_text = "\n".join(lines)
 
-    # सॉलिड ब्लैक स्ट्रिप ताकि नीचे का पोस्टर टेक्स्ट न दिखे
-    draw.rectangle([20, 10, width - 20, height - 10], fill=(10, 10, 10, 245), outline=(255, 230, 0, 255), width=3)
+    # सॉलिड ब्लैक कार्ड + येलो बॉर्डर
+    draw.rounded_rectangle([10, 10, width - 10, height - 10], radius=20, fill=(15, 15, 15, 230), outline=(255, 230, 0, 255), width=3)
     
     bbox = draw.multiline_textbbox((0, 0), full_text, font=font, align="center")
     text_w = bbox[2] - bbox[0]
@@ -80,7 +83,6 @@ def create_subtitle_image(text, output_path, width=1080, height=360):
     x = (width - text_w) // 2
     y = (height - text_h) // 2
     
-    # वाइब्रेंट येलो टेक्स्ट
     draw.multiline_text((x, y), full_text, font=font, fill="#FFE600", align="center")
     
     img.save(output_path, "PNG")
@@ -100,14 +102,17 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                 with open(raw_img_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
 
-                # 1. Clean Logo
-                remove_center_watermark(raw_img_path, clean_img_path)
+                # 1. Process Poster (Clean Crop + Logo Blur)
+                process_poster(raw_img_path, clean_img_path)
 
-                # 2. Script
-                pil_image = Image.open(clean_img_path)
+                # 2. Gemini Script Generation (Always 3 Clear Sentences)
+                pil_image = Image.open(raw_img_path)
                 prompt = (
-                    "इस पोस्टर को पढ़ो और केवल 15 सेकंड की आकर्षक हिंदी स्क्रिप्ट लिखो। "
-                    "शुरुआत में सवाल हो और अंत में 'YES या NO कमेंट करें' कहें। "
+                    "इस पोस्टर को पढ़ो और केवल 15 सेकंड की बोलने वाली हिंदी स्क्रिप्ट लिखो। "
+                    "स्क्रिप्ट में ठीक 3 वाक्य होने चाहिए: "
+                    "1. पहला वाक्य एक हुक/सवाल। "
+                    "2. दूसरा वाक्य मुख्य खबर। "
+                    "3. तीसरा वाक्य 'क्या आप इस बात से सहमत हैं? YES या NO कमेंट करें।' "
                     "सिर्फ बोलने वाला टेक्स्ट दो, कोई निर्देश या इमोजी नहीं।"
                 )
                 
@@ -121,7 +126,7 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                 script = res.text.strip()
                 st.info(f"**जनरेटेड स्क्रिप्ट:**\n\n{script}")
 
-                # 3. Voiceover
+                # 3. Voiceover (Edge-TTS)
                 async def generate_audio():
                     comm = edge_tts.Communicate(script, voice="hi-IN-MadhurNeural")
                     await comm.save(audio_path)
@@ -139,22 +144,25 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                 bg_img.save(bg_p)
                 bg_clip = ImageClip(bg_p).set_duration(dur)
                 
-                # Foreground Poster (Centered & Clean)
+                # Foreground Poster (Cleaned & Positioned in upper center)
                 fg_clip = ImageClip(clean_img_path).set_duration(dur)
-                fg_clip = fg_clip.resize(width=1040)
-                fg_clip = fg_clip.set_position(("center", 180))
+                fg_clip = fg_clip.resize(width=1000)
+                fg_clip = fg_clip.set_position(("center", 140))
 
-                # 5. Clean Hindi Captions (Placed over bottom text box)
-                words = script.split()
-                chunk_size = max(4, len(words) // 4)
-                chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
+                # 5. Smart Sentence-based Subtitles (No single orphan words)
+                # वाक्यों के आधार पर चंक बनाना
+                sentences = [s.strip() for s in script.replace("।", "।|").replace("?", "?|").split("|") if s.strip()]
+                if len(sentences) < 2:
+                    words = script.split()
+                    chunk_size = max(5, len(words) // 3)
+                    sentences = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
                 
                 subtitle_clips = []
-                chunk_duration = dur / len(chunks)
+                chunk_duration = dur / len(sentences)
                 
-                for idx, chunk in enumerate(chunks):
+                for idx, sent in enumerate(sentences):
                     sub_img_path = os.path.join(tmpdir, f"sub_{idx}.png")
-                    create_subtitle_image(chunk, sub_img_path)
+                    create_subtitle_image(sent, sub_img_path)
                     
                     sub_clip = (ImageClip(sub_img_path)
                                 .set_duration(chunk_duration)
