@@ -1,0 +1,6 @@
+streamlit
+google-generativeai
+edge-tts
+moviepy==1.0.3
+pillow
+opencv-python-headless
