@@ -12,7 +12,7 @@ st.title("📱 Auto Shorts Generator")
 
 # 1. API Setup
 if "GEMINI_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"].strip())
 else:
     st.error("API Key सेटिंग्स में नहीं मिली! कृपया Streamlit Secrets चेक करें।")
     st.stop()
@@ -30,16 +30,22 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
             with open(input_img_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
 
-            # 1. Gemini से हिंदी स्क्रिप्ट (सीधे PIL Image पास करके)
-            model = genai.GenerativeModel("models/gemini-1.5-flash")
+            # 1. Gemini से हिंदी स्क्रिप्ट
             pil_image = Image.open(input_img_path)
-            
             prompt = (
                 "इस पोस्टर को पढ़ो और केवल 15 सेकंड की आकर्षक, बोलने वाली हिंदी स्क्रिप्ट लिखो। "
                 "शुरुआत में सवाल हो और अंत में 'YES या NO कमेंट करें' कहें। "
                 "सिर्फ बोलने वाला टेक्स्ट दो, कोई निर्देश या इमोजी नहीं।"
             )
-            res = model.generate_content([pil_image, prompt])
+
+            # Auto-fallback to working model
+            try:
+                model = genai.GenerativeModel("models/gemini-1.5-flash")
+                res = model.generate_content([pil_image, prompt])
+            except Exception:
+                model = genai.GenerativeModel("models/gemini-1.5-pro")
+                res = model.generate_content([pil_image, prompt])
+
             script = res.text.strip()
             st.info(f"**जनरेटेड स्क्रिप्ट:** {script}")
 
