@@ -20,43 +20,41 @@ else:
     st.error("API Key सेटिंग्स में नहीं मिली! कृपया Streamlit Secrets चेक करें।")
     st.stop()
 
-# Helper: Logo Blur (Accurate Center Cleanup)
+# Helper: Logo Blur (Targeting Center 'GK' Badge)
 def remove_center_watermark(image_path, output_path):
     img = cv2.imread(image_path)
     h, w, _ = img.shape
     
-    # सेंटर वॉटरमार्क एरिया को थोड़ा बड़ा और स्मूथ ब्लर
-    ymin, ymax = int(h * 0.40), int(h * 0.60)
-    xmin, xmax = int(w * 0.40), int(w * 0.60)
+    # सेंटर 'GK' लोगो का सटीक एरिया
+    ymin, ymax = int(h * 0.44), int(h * 0.54)
+    xmin, xmax = int(w * 0.44), int(w * 0.56)
     
     sub_img = img[ymin:ymax, xmin:xmax]
-    blurred = cv2.GaussianBlur(sub_img, (51, 51), 40)
+    blurred = cv2.GaussianBlur(sub_img, (65, 65), 50)
     img[ymin:ymax, xmin:xmax] = blurred
     
     cv2.imwrite(output_path, img)
     return output_path
 
-# Helper: Hindi Subtitle Image (With Devanagari Font Support)
-def create_subtitle_image(text, output_path, width=1080, height=220):
+# Helper: Clean Caption Bar (Bottom English Text Covering Box)
+def create_subtitle_image(text, output_path, width=1080, height=360):
+    # सॉलिड डार्क बैकग्राउंड बॉक्स जो नीचे वाले ओरिजिनल टेक्स्ट को पूरी तरह छुपा देगा
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
-    # हिंदी सपोर्टेड फॉन्ट्स
     font_paths = [
         "/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     ]
-    
     font = None
     for fp in font_paths:
         if os.path.exists(fp):
             try:
-                font = ImageFont.truetype(fp, 44)
+                font = ImageFont.truetype(fp, 46)
                 break
             except Exception:
                 continue
-                
     if font is None:
         font = ImageFont.load_default()
 
@@ -64,7 +62,7 @@ def create_subtitle_image(text, output_path, width=1080, height=220):
     lines, curr = [], []
     for w in words:
         curr.append(w)
-        if len(" ".join(curr)) > 26:
+        if len(" ".join(curr)) > 24:
             lines.append(" ".join(curr[:-1]))
             curr = [w]
     if curr:
@@ -72,15 +70,17 @@ def create_subtitle_image(text, output_path, width=1080, height=220):
 
     full_text = "\n".join(lines)
 
+    # सॉलिड ब्लैक स्ट्रिप ताकि नीचे का पोस्टर टेक्स्ट न दिखे
+    draw.rectangle([20, 10, width - 20, height - 10], fill=(10, 10, 10, 245), outline=(255, 230, 0, 255), width=3)
+    
     bbox = draw.multiline_textbbox((0, 0), full_text, font=font, align="center")
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
     
     x = (width - text_w) // 2
     y = (height - text_h) // 2
-
-    # बैकग्राउंड डार्क स्ट्रिप + येलो टेक्स्ट
-    draw.rounded_rectangle([x - 20, y - 10, x + text_w + 20, y + text_h + 10], radius=15, fill=(0, 0, 0, 200))
+    
+    # वाइब्रेंट येलो टेक्स्ट
     draw.multiline_text((x, y), full_text, font=font, fill="#FFE600", align="center")
     
     img.save(output_path, "PNG")
@@ -103,7 +103,7 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                 # 1. Clean Logo
                 remove_center_watermark(raw_img_path, clean_img_path)
 
-                # 2. Gemini Script
+                # 2. Script
                 pil_image = Image.open(clean_img_path)
                 prompt = (
                     "इस पोस्टर को पढ़ो और केवल 15 सेकंड की आकर्षक हिंदी स्क्रिप्ट लिखो। "
@@ -134,18 +134,17 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
 
                 # Blurred Background
                 orig = Image.open(clean_img_path)
-                bg_img = orig.resize((1080, 1920)).filter(ImageFilter.GaussianBlur(25))
+                bg_img = orig.resize((1080, 1920)).filter(ImageFilter.GaussianBlur(30))
                 bg_p = os.path.join(tmpdir, "bg.jpg")
                 bg_img.save(bg_p)
                 bg_clip = ImageClip(bg_p).set_duration(dur)
                 
-                # Foreground with Motion
+                # Foreground Poster (Centered & Clean)
                 fg_clip = ImageClip(clean_img_path).set_duration(dur)
-                fg_clip = fg_clip.resize(width=1000)
-                fg_clip = fg_clip.set_position("center")
-                fg_clip = fg_clip.resize(lambda t: 1 + 0.03 * (t / dur))
+                fg_clip = fg_clip.resize(width=1040)
+                fg_clip = fg_clip.set_position(("center", 180))
 
-                # 5. Hindi Subtitles
+                # 5. Clean Hindi Captions (Placed over bottom text box)
                 words = script.split()
                 chunk_size = max(4, len(words) // 4)
                 chunks = [" ".join(words[i:i + chunk_size]) for i in range(0, len(words), chunk_size)]
@@ -160,7 +159,7 @@ if uploaded_file and st.button("🚀 Video Generate Karein"):
                     sub_clip = (ImageClip(sub_img_path)
                                 .set_duration(chunk_duration)
                                 .set_start(idx * chunk_duration)
-                                .set_position(("center", 1450)))
+                                .set_position(("center", 1420)))
                     subtitle_clips.append(sub_clip)
 
                 # Composite Video
